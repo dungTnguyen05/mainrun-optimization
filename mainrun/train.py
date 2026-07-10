@@ -21,8 +21,17 @@ class Hyperparameters:
     n_head: int = 8
     d_model: int = 512
     dropout: float = 0.1
+
+    # lr: float = 6e-3
+    # weight_decay: float = 0.0
+
+    # Optimization 01: Switch to AdamW
     lr: float = 3e-4
     weight_decay: float = 0.1
+
+    # Optimization 02: Add linear learning-rate warmup before cosine decay
+    warmup_ratio: float = 0.05
+
     evals_per_epoch: int = 3
     
     epochs: int = 7
@@ -263,13 +272,40 @@ def main():
     logger.log("model_info", parameters_count=model_params)
     
     # opt = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+
+    # Optimization 01: Switch to AdamW
     opt = torch.optim.AdamW(
         model.parameters(),
         lr=args.lr,
         betas=(0.9, 0.95),
         weight_decay=args.weight_decay
     )
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max_steps)
+
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max_steps)
+
+    # Optimization 02: Add linear learning-rate warmup before cosine decay
+    warmup_steps = max(1, int(args.warmup_ratio * max_steps))
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+        opt,
+        start_factor=0.1,
+        end_factor=1.0,
+        total_iters=warmup_steps
+    )
+    cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        opt,
+        T_max=max_steps - warmup_steps
+    )
+    scheduler = torch.optim.lr_scheduler.SequentialLR(
+        opt,
+        schedulers=[warmup_scheduler, cosine_scheduler],
+        milestones=[warmup_steps]
+    )
+    logger.log(
+        "scheduler_info",
+        scheduler="linear_warmup_cosine_decay",
+        warmup_steps=warmup_steps,
+        warmup_ratio=args.warmup_ratio
+    )
 
     def evaluate():
         model.eval()
