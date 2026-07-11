@@ -45,7 +45,10 @@ class Hyperparameters:
     # weight_decay: float = 0.15
 
     # Optimization 15: Tune weight decay to 0.2
-    weight_decay: float = 0.2
+    # weight_decay: float = 0.2
+
+    # Optimization 16: Tune weight decay to 0.18
+    weight_decay: float = 0.18
 
     # Optimization 03: Tune learning rate to 2e-4
     # lr: float = 2e-4
