@@ -20,7 +20,10 @@ class Hyperparameters:
     n_layer: int = 6
     n_head: int = 8
     d_model: int = 512
-    dropout: float = 0.1
+    # dropout: float = 0.1
+
+    # Optimization 09: Reduce dropout to 0.05
+    dropout: float = 0.05
 
     # lr: float = 6e-3
     # weight_decay: float = 0.0
@@ -39,13 +42,13 @@ class Hyperparameters:
     # lr: float = 8e-4
 
     # Optimization 06: Tune learning rate to 1e-3
-    # lr: float = 1e-3
+    lr: float = 1e-3
 
     # Optimization 07: Tune learning rate to 1.2e-3
     # lr: float = 1.2e-3
 
     # Optimization 08: Tune learning rate to 1.1e-3
-    lr: float = 1.1e-3
+    # lr: float = 1.1e-3
 
     # Optimization 02: Add linear learning-rate warmup before cosine decay
     warmup_ratio: float = 0.05
