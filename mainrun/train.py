@@ -33,7 +33,10 @@ class Hyperparameters:
     # lr: float = 2e-4
 
     # Optimization 04: Tune learning rate to 5e-4
-    lr: float = 5e-4
+    # lr: float = 5e-4
+
+    # Optimization 05: Tune learning rate to 8e-4
+    lr: float = 8e-4
 
     # Optimization 02: Add linear learning-rate warmup before cosine decay
     warmup_ratio: float = 0.05
