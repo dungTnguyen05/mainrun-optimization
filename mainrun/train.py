@@ -36,7 +36,10 @@ class Hyperparameters:
 
     # Optimization 01: Switch to AdamW
     # lr: float = 3e-4
-    weight_decay: float = 0.1
+    # weight_decay: float = 0.1
+
+    # Optimization 13: Tune weight decay to 0.05
+    weight_decay: float = 0.05
 
     # Optimization 03: Tune learning rate to 2e-4
     # lr: float = 2e-4
@@ -301,16 +304,15 @@ def main():
     # opt = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     # Optimization 01: Switch to AdamW
-    """
     opt = torch.optim.AdamW(
         model.parameters(),
         lr=args.lr,
         betas=(0.9, 0.95),
         weight_decay=args.weight_decay
     )
-    """
 
     # Optimization 12: Exclude LayerNorm and bias parameters from weight decay
+    """
     decay_params = []
     no_decay_params = []
 
@@ -332,6 +334,7 @@ def main():
         lr=args.lr,
         betas=(0.9, 0.95),
     )
+    """
 
     # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max_steps)
 
