@@ -15,10 +15,10 @@ import structlog
 @dataclass
 class Hyperparameters:
     block_size: int = 128
-    # batch_size: int = 64
+    batch_size: int = 64
 
     # Optimization 26: Tune batch size to 32
-    batch_size: int = 32
+    # batch_size: int = 32
 
     vocab_size: int = 16_000
 
@@ -274,6 +274,13 @@ class GPT(nn.Module):
         self.head      = nn.Linear(cfg.d_model, cfg.vocab_size, bias=False)
 
         self.apply(self._init_weights)
+
+        # Optimization 27: Add residual initialization scaling
+        residual_init_std = 0.02 / math.sqrt(2 * cfg.n_layer)
+        for name, param in self.named_parameters():
+            if name.endswith("attn.proj.weight") or name.endswith("mlp.net.2.weight"):
+                nn.init.normal_(param, mean=0.0, std=residual_init_std)
+
         self.head.weight = self.token_emb.weight
 
     @staticmethod
