@@ -215,29 +215,140 @@ class GPTConfig:
     d_model: int
     dropout: float
 
+# Optimization 28: Replace learned positional embeddings with RoPE
+def apply_rotary_embeddings(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
+    """
+    Apply RoPE to x.
+
+    x shape:   (batch, heads, sequence, head_dim)
+    cos/sin:   (1, 1, sequence, head_dim / 2)
+    """
+    x_even = x[..., 0::2]
+    x_odd = x[..., 1::2]
+
+    rotated_even = x_even * cos - x_odd * sin
+    rotated_odd = x_even * sin + x_odd * cos
+
+    return torch.stack((rotated_even, rotated_odd), dim=-1).flatten(-2)
+
 class CausalSelfAttention(nn.Module):
     def __init__(self, cfg: GPTConfig):
         super().__init__()
+
         assert cfg.d_model % cfg.n_head == 0
+
         self.head_dim = cfg.d_model // cfg.n_head
-        self.n_head   = cfg.n_head
-        self.qkv = nn.Linear(cfg.d_model, 3 * cfg.d_model)
-        self.proj = nn.Linear(cfg.d_model, cfg.d_model)
+        self.n_head = cfg.n_head
+
+        assert self.head_dim % 2 == 0, (
+            "RoPE requires an even attention head dimension"
+        )
+
+        self.qkv = nn.Linear(
+            cfg.d_model,
+            3 * cfg.d_model,
+        )
+        self.proj = nn.Linear(
+            cfg.d_model,
+            cfg.d_model,
+        )
+
         self.attn_drop = nn.Dropout(cfg.dropout)
-        self.resid_drop= nn.Dropout(cfg.dropout)
-        self.register_buffer("tril", torch.tril(torch.ones(cfg.block_size, cfg.block_size)))
+        self.resid_drop = nn.Dropout(cfg.dropout)
+
+        self.register_buffer(
+            "tril",
+            torch.tril(
+                torch.ones(
+                    cfg.block_size,
+                    cfg.block_size,
+                    dtype=torch.bool,
+                )
+            ),
+            persistent=False,
+        )
+
+        # Optimization 28: Replace learned positional embeddings with RoPE
+        inv_freq = 1.0 / (
+            10_000
+            ** (
+                torch.arange(
+                    0,
+                    self.head_dim,
+                    2,
+                    dtype=torch.float32,
+                )
+                / self.head_dim
+            )
+        )
+
+        positions = torch.arange(
+            cfg.block_size,
+            dtype=torch.float32,
+        )
+
+        frequencies = torch.outer(
+            positions,
+            inv_freq,
+        )
+
+        self.register_buffer(
+            "rope_cos",
+            frequencies.cos(),
+            persistent=False,
+        )
+        self.register_buffer(
+            "rope_sin",
+            frequencies.sin(),
+            persistent=False,
+        )
 
     def forward(self, x: torch.Tensor):
         B, T, C = x.size()
-        qkv = self.qkv(x).view(B, T, 3, self.n_head, self.head_dim).transpose(1, 3)
-        q, k, v = qkv[..., 0, :, :], qkv[..., 1, :, :], qkv[..., 2, :, :]
-        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-        att = att.masked_fill(self.tril[:T, :T] == 0, float("-inf"))
+
+        qkv = self.qkv(x).view(
+            B,
+            T,
+            3,
+            self.n_head,
+            self.head_dim,
+        )
+
+        # Shape: (3, B, n_head, T, head_dim)
+        qkv = qkv.permute(2, 0, 3, 1, 4)
+        q, k, v = qkv.unbind(dim=0)
+
+        # Shape: (1, 1, T, head_dim / 2)
+        cos = self.rope_cos[:T].unsqueeze(0).unsqueeze(0)
+        sin = self.rope_sin[:T].unsqueeze(0).unsqueeze(0)
+
+        # RoPE is applied only to queries and keys
+        q = apply_rotary_embeddings(q, cos, sin)
+        k = apply_rotary_embeddings(k, cos, sin)
+
+        att = (
+            q @ k.transpose(-2, -1)
+        ) * (1.0 / math.sqrt(self.head_dim))
+
+        att = att.masked_fill(
+            ~self.tril[:T, :T],
+            float("-inf"),
+        )
+
         att = F.softmax(att, dim=-1)
         att = self.attn_drop(att)
+
         y = att @ v
-        y = y.transpose(1, 2).contiguous().view(B, T, C)
-        return self.resid_drop(self.proj(y))
+
+        y = (
+            y.transpose(1, 2)
+            .contiguous()
+            .view(B, T, C)
+        )
+
+        return self.resid_drop(
+            self.proj(y)
+        )
 
 class MLP(nn.Module):
     def __init__(self, cfg: GPTConfig):
@@ -267,7 +378,7 @@ class GPT(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.token_emb = nn.Embedding(cfg.vocab_size, cfg.d_model)
-        self.pos_emb   = nn.Parameter(torch.zeros(1, cfg.block_size, cfg.d_model))
+        # self.pos_emb   = nn.Parameter(torch.zeros(1, cfg.block_size, cfg.d_model)) -> Remove for Optimization 28
         self.drop      = nn.Dropout(cfg.dropout)
         self.blocks    = nn.ModuleList([Block(cfg) for _ in range(cfg.n_layer)])
         self.ln_f      = nn.LayerNorm(cfg.d_model)
@@ -293,8 +404,9 @@ class GPT(nn.Module):
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None):
         B, T = idx.size()
         tok = self.token_emb(idx)
-        pos = self.pos_emb[:, :T, :]
-        x = self.drop(tok + pos)
+        # pos = self.pos_emb[:, :T, :] -> Remove for Optimization 28
+        # x = self.drop(tok + pos)
+        x = self.drop(tok)
         for block in self.blocks: x = block(x)
         x = self.ln_f(x)
         logits = self.head(x)
