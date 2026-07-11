@@ -42,13 +42,13 @@ class Hyperparameters:
     # weight_decay: float = 0.05
 
     # Optimization 14: Tune weight decay to 0.15
-    # weight_decay: float = 0.15
+    weight_decay: float = 0.15
 
     # Optimization 15: Tune weight decay to 0.2
     # weight_decay: float = 0.2
 
     # Optimization 16: Tune weight decay to 0.18
-    weight_decay: float = 0.18
+    # weight_decay: float = 0.18
 
     # Optimization 03: Tune learning rate to 2e-4
     # lr: float = 2e-4
@@ -69,7 +69,10 @@ class Hyperparameters:
     # lr: float = 1.1e-3
 
     # Optimization 02: Add linear learning-rate warmup before cosine decay
-    warmup_ratio: float = 0.05
+    # warmup_ratio: float = 0.05
+
+    # Optimization 17: Tune warmup ratio to 0.02
+    warmup_ratio: float = 0.02
 
     evals_per_epoch: int = 3
     
