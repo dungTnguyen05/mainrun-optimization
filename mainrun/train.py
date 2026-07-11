@@ -301,11 +301,36 @@ def main():
     # opt = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     # Optimization 01: Switch to AdamW
+    """
     opt = torch.optim.AdamW(
         model.parameters(),
         lr=args.lr,
         betas=(0.9, 0.95),
         weight_decay=args.weight_decay
+    )
+    """
+
+    # Optimization 12: Exclude LayerNorm and bias parameters from weight decay
+    decay_params = []
+    no_decay_params = []
+
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+
+        # Do not apply weight decay to biases or LayerNorm parameters
+        if name.endswith(".bias") or "ln" in name.lower():
+            no_decay_params.append(param)
+        else:
+            decay_params.append(param)
+
+    opt = torch.optim.AdamW(
+        [
+            {"params": decay_params, "weight_decay": args.weight_decay},
+            {"params": no_decay_params, "weight_decay": 0.0},
+        ],
+        lr=args.lr,
+        betas=(0.9, 0.95),
     )
 
     # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max_steps)
