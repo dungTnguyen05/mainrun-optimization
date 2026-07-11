@@ -20,7 +20,10 @@ class Hyperparameters:
     # vocab_size: int = 16_000
 
     # Optimization 24: Tune vocab size to 20k
-    vocab_size: int = 20_000
+    # vocab_size: int = 20_000
+
+    # Optimization 25: Tune vocab size to 12k
+    vocab_size: int = 12_000
     
     n_layer: int = 6
     n_head: int = 8
