@@ -26,8 +26,11 @@ class Hyperparameters:
     # weight_decay: float = 0.0
 
     # Optimization 01: Switch to AdamW
-    lr: float = 3e-4
+    # lr: float = 3e-4
     weight_decay: float = 0.1
+
+    # Optimization 03: Tune learning rate to 2e-4
+    lr: float = 2e-4
 
     # Optimization 02: Add linear learning-rate warmup before cosine decay
     warmup_ratio: float = 0.05
@@ -282,7 +285,7 @@ def main():
     )
 
     # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max_steps)
-    
+
     # Optimization 02: Add linear learning-rate warmup before cosine decay
     warmup_steps = max(1, int(args.warmup_ratio * max_steps))
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
