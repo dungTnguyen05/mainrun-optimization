@@ -16,7 +16,12 @@ import structlog
 class Hyperparameters:
     block_size: int = 128
     batch_size: int = 64
-    vocab_size: int = 16_000
+
+    # vocab_size: int = 16_000
+
+    # Optimization 24: Tune vocab size to 20k
+    vocab_size: int = 20_000
+    
     n_layer: int = 6
     n_head: int = 8
     d_model: int = 512
@@ -87,10 +92,10 @@ class Hyperparameters:
     # warmup_ratio: float = 0.15
 
     # Optimization 22: Tune warmup ratio to 0.18
-    # warmup_ratio: float = 0.18
+    warmup_ratio: float = 0.18
 
     # Optimization 23: Tune warmup ratio to 0.2
-    warmup_ratio: float = 0.2
+    # warmup_ratio: float = 0.2
 
     evals_per_epoch: int = 3
     
