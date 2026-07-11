@@ -84,7 +84,10 @@ class Hyperparameters:
     # warmup_ratio: float = 0.12
 
     # Optimization 21: Tune warmup ratio to 0.15
-    warmup_ratio: float = 0.15
+    # warmup_ratio: float = 0.15
+
+    # Optimization 22: Tune warmup ratio to 0.18
+    warmup_ratio: float = 0.18
 
     evals_per_epoch: int = 3
     
