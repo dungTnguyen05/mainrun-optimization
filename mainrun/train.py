@@ -42,9 +42,16 @@ class Hyperparameters:
     """
 
     # Optimization 33: Test 10L-8H-416D architecture
+    """
     n_layer: int = 10
     n_head: int = 8
     d_model: int = 416
+    """
+
+    # Optimization 34: Test 10L-8H-448D architecture
+    n_layer: int = 10
+    n_head: int = 8
+    d_model: int = 448
 
     # dropout: float = 0.1
 
