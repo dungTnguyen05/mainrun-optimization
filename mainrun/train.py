@@ -40,8 +40,11 @@ class Hyperparameters:
     # dropout: float = 0.02
 
     # Optimization 11: Remove dropout
-    dropout: float = 0.0
+    # dropout: float = 0.0
 
+    # Optimization 30: SwiGLU with 0.02 dropout
+    dropout: float = 0.02
+    
     # lr: float = 6e-3
     # weight_decay: float = 0.0
 
