@@ -243,6 +243,9 @@ class GPTConfig:
     d_model: int
     dropout: float
 
+    # Optimization 37: Prevent attention across EOS boundaries
+    eos_token_id: int
+
 # Optimization 35: Replace LayerNorm with RMSNorm
 """
 class RMSNorm(nn.Module):
@@ -286,7 +289,7 @@ class CausalSelfAttention(nn.Module):
         self.head_dim = cfg.d_model // cfg.n_head
         self.n_head = cfg.n_head
         
-        self.dropout_p = cfg.dropout # For Optimization 36
+        # self.dropout_p = cfg.dropout # For Optimization 36
 
         assert self.head_dim % 2 == 0, (
             "RoPE requires an even attention head dimension"
@@ -301,11 +304,10 @@ class CausalSelfAttention(nn.Module):
             cfg.d_model,
         )
 
-        # self.attn_drop = nn.Dropout(cfg.dropout) -> Remove for Optimization 36
+        self.attn_drop = nn.Dropout(cfg.dropout)
         self.resid_drop = nn.Dropout(cfg.dropout)
         
-        # Remove for Optimization 36
-        """
+        # Remove for Optimization 36 -> Reverted
         self.register_buffer(
             "tril",
             torch.tril(
@@ -317,7 +319,6 @@ class CausalSelfAttention(nn.Module):
             ),
             persistent=False,
         )
-        """
 
         # Optimization 28: Replace learned positional embeddings with RoPE
         inv_freq = 1.0 / (
@@ -354,6 +355,7 @@ class CausalSelfAttention(nn.Module):
             persistent=False,
         )
 
+    """
     def forward(self, x: torch.Tensor):
         B, T, C = x.size()
 
@@ -378,6 +380,7 @@ class CausalSelfAttention(nn.Module):
         k = apply_rotary_embeddings(k, cos, sin)
 
         # Optimization 36: PyTorch SDPA
+        """
         y = F.scaled_dot_product_attention(
             q,
             k,
@@ -386,8 +389,8 @@ class CausalSelfAttention(nn.Module):
             dropout_p=self.dropout_p if self.training else 0.0,
             is_causal=True,
         )
-
         """
+
         att = (
             q @ k.transpose(-2, -1)
         ) * (1.0 / math.sqrt(self.head_dim))
@@ -401,7 +404,55 @@ class CausalSelfAttention(nn.Module):
         att = self.attn_drop(att)
 
         y = att @ v
-        """
+
+        y = (
+            y.transpose(1, 2)
+            .contiguous()
+            .view(B, T, C)
+        )
+
+        return self.resid_drop(
+            self.proj(y)
+        )
+    """
+
+    # Optimization 37: Prevent attention across EOS boundaries
+    def forward(self, x: torch.Tensor, same_segment: torch.Tensor):
+        B, T, C = x.size()
+
+        qkv = self.qkv(x).view(
+            B,
+            T,
+            3,
+            self.n_head,
+            self.head_dim,
+        )
+
+        qkv = qkv.permute(2, 0, 3, 1, 4)
+        q, k, v = qkv.unbind(dim=0)
+
+        cos = self.rope_cos[:T].unsqueeze(0).unsqueeze(0)
+        sin = self.rope_sin[:T].unsqueeze(0).unsqueeze(0)
+
+        q = apply_rotary_embeddings(q, cos, sin)
+        k = apply_rotary_embeddings(k, cos, sin)
+
+        att = (
+            q @ k.transpose(-2, -1)
+        ) * (1.0 / math.sqrt(self.head_dim))
+
+        causal_mask = self.tril[:T, :T].unsqueeze(0)
+        allowed_mask = causal_mask & same_segment
+
+        att = att.masked_fill(
+            ~allowed_mask.unsqueeze(1),
+            float("-inf"),
+        )
+
+        att = F.softmax(att, dim=-1)
+        att = self.attn_drop(att)
+
+        y = att @ v
 
         y = (
             y.transpose(1, 2)
@@ -455,8 +506,17 @@ class Block(nn.Module):
 
         self.attn = CausalSelfAttention(cfg)
         self.mlp  = MLP(cfg)
+
+    """
     def forward(self, x):
         x = x + self.attn(self.ln1(x))
+        x = x + self.mlp(self.ln2(x))
+        return x
+    """
+
+    # Optimization 37: Prevent attention across EOS boundaries
+    def forward(self, x: torch.Tensor, same_segment: torch.Tensor):
+        x = x + self.attn(self.ln1(x), same_segment)
         x = x + self.mlp(self.ln2(x))
         return x
 
@@ -494,6 +554,7 @@ class GPT(nn.Module):
             if isinstance(module, nn.Linear) and module.bias is not None:
                 nn.init.zeros_(module.bias)
 
+    """
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None):
         B, T = idx.size()
         tok = self.token_emb(idx)
@@ -507,6 +568,56 @@ class GPT(nn.Module):
             loss = None
         else:
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), reduction='mean')
+        return logits, loss
+    """
+
+    # Optimization 37: Prevent attention across EOS boundaries
+    def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None):
+        B, T = idx.size()
+
+        # Assign each token to its headline segment
+        # A new segment starts at the token immediately after <eos>
+        starts_new_segment = torch.zeros(
+            B,
+            T,
+            dtype=torch.long,
+            device=idx.device,
+        )
+
+        starts_new_segment[:, 1:] = (
+            idx[:, :-1] == self.cfg.eos_token_id
+        ).long()
+
+        segment_ids = torch.cumsum(
+            starts_new_segment,
+            dim=1,
+        )
+
+        # same_segment[b, i, j] is True only when token i and
+        # token j belong to the same headline
+        same_segment = (
+            segment_ids.unsqueeze(2)
+            == segment_ids.unsqueeze(1)
+        )
+
+        tok = self.token_emb(idx)
+        x = self.drop(tok)
+
+        for block in self.blocks:
+            x = block(x, same_segment)
+
+        x = self.ln_f(x)
+        logits = self.head(x)
+
+        if targets is None:
+            loss = None
+        else:
+            loss = F.cross_entropy(
+                logits.view(-1, logits.size(-1)),
+                targets.view(-1),
+                reduction="mean",
+            )
+
         return logits, loss
 
 def main():
@@ -542,6 +653,9 @@ def main():
                tokens_per_epoch=len(train_ids),
                vocab_size=tok.vocab_size)
 
+    # Optimization 37: Prevent attention across EOS boundaries
+    eos_token_id = tok.stoi[eos_token]
+
     cfg = GPTConfig(
         vocab_size = tok.vocab_size,
         block_size = args.block_size,
@@ -549,6 +663,7 @@ def main():
         n_head     = args.n_head,
         d_model    = args.d_model,
         dropout    = args.dropout,
+        eos_token_id=eos_token_id, # For Optimization 37
     )
     model = GPT(cfg).to(device)
     model_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
