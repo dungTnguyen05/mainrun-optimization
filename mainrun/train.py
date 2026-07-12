@@ -27,10 +27,18 @@ class Hyperparameters:
 
     # Optimization 25: Tune vocab size to 12k
     # vocab_size: int = 12_000
-    
+
+    """
     n_layer: int = 6
     n_head: int = 8
     d_model: int = 512
+    """
+
+    # Optimization 32: Deeper and narrower architecture
+    n_layer: int = 8
+    n_head: int = 8
+    d_model: int = 448
+
     # dropout: float = 0.1
 
     # Optimization 09: Reduce dropout to 0.05
