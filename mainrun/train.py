@@ -35,11 +35,9 @@ class Hyperparameters:
     """
 
     # Optimization 32: Deeper and narrower architecture
-    """
     n_layer: int = 8
     n_head: int = 8
     d_model: int = 448
-    """
 
     # Optimization 33: Test 10L-8H-416D architecture
     """
@@ -49,9 +47,11 @@ class Hyperparameters:
     """
 
     # Optimization 34: Test 10L-8H-448D architecture
+    """
     n_layer: int = 10
     n_head: int = 8
     d_model: int = 448
+    """
 
     # dropout: float = 0.1
 
@@ -243,6 +243,22 @@ class GPTConfig:
     d_model: int
     dropout: float
 
+# Optimization 35: Replace LayerNorm with RMSNorm
+class RMSNorm(nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-5):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        input_dtype = x.dtype
+        x_float = x.float()
+
+        rms = x_float.pow(2).mean(dim=-1, keepdim=True)
+        x_norm = x_float * torch.rsqrt(rms + self.eps)
+
+        return (x_norm * self.weight.float()).to(input_dtype)
+
 # Optimization 28: Replace learned positional embeddings with RoPE
 def apply_rotary_embeddings(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
     """
@@ -411,8 +427,13 @@ class MLP(nn.Module):
 class Block(nn.Module):
     def __init__(self, cfg: GPTConfig):
         super().__init__()
-        self.ln1 = nn.LayerNorm(cfg.d_model)
-        self.ln2 = nn.LayerNorm(cfg.d_model)
+        # self.ln1 = nn.LayerNorm(cfg.d_model)
+        # self.ln2 = nn.LayerNorm(cfg.d_model)
+
+        # Optimization 35: Replace LayerNorm with RMSNorm
+        self.ln1 = RMSNorm(cfg.d_model)
+        self.ln2 = RMSNorm(cfg.d_model)
+
         self.attn = CausalSelfAttention(cfg)
         self.mlp  = MLP(cfg)
     def forward(self, x):
@@ -428,7 +449,12 @@ class GPT(nn.Module):
         # self.pos_emb   = nn.Parameter(torch.zeros(1, cfg.block_size, cfg.d_model)) -> Remove for Optimization 28
         self.drop      = nn.Dropout(cfg.dropout)
         self.blocks    = nn.ModuleList([Block(cfg) for _ in range(cfg.n_layer)])
-        self.ln_f      = nn.LayerNorm(cfg.d_model)
+
+        # self.ln_f      = nn.LayerNorm(cfg.d_model)
+
+        # Optimization 35: Replace final LayerNorm with RMSNorm
+        self.ln_f = RMSNorm(cfg.d_model)
+
         self.head      = nn.Linear(cfg.d_model, cfg.vocab_size, bias=False)
 
         self.apply(self._init_weights)
