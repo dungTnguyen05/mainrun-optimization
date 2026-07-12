@@ -380,16 +380,14 @@ class CausalSelfAttention(nn.Module):
         k = apply_rotary_embeddings(k, cos, sin)
 
         # Optimization 36: PyTorch SDPA
-        """
-        y = F.scaled_dot_product_attention(
-            q,
-            k,
-            v,
-            attn_mask=None,
-            dropout_p=self.dropout_p if self.training else 0.0,
-            is_causal=True,
-        )
-        """
+        # y = F.scaled_dot_product_attention(
+            # q,
+            # k,
+            # v,
+            # attn_mask=None,
+            # dropout_p=self.dropout_p if self.training else 0.0,
+            # is_causal=True,
+        # )
 
         att = (
             q @ k.transpose(-2, -1)
