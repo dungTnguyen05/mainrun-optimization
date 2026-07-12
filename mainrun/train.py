@@ -679,7 +679,9 @@ def main():
         # Optimization 39: Tune AdamW beta2 to 0.99
         # betas=(0.9, 0.99),
         # Optimization 40: Tune AdamW beta2 to 0.995
-        betas=(0.9, 0.995),
+        # betas=(0.9, 0.995),
+        # Optimization 41: Tune AdamW beta2 to 0.999
+        betas=(0.9, 0.999),
         weight_decay=args.weight_decay
     )
 
