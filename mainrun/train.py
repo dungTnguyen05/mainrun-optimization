@@ -353,13 +353,32 @@ class CausalSelfAttention(nn.Module):
 class MLP(nn.Module):
     def __init__(self, cfg: GPTConfig):
         super().__init__()
+        """
         self.net = nn.Sequential(
             nn.Linear(cfg.d_model, 4 * cfg.d_model),
             nn.GELU(),
             nn.Linear(4 * cfg.d_model, cfg.d_model),
             nn.Dropout(cfg.dropout),
         )
-    def forward(self, x): return self.net(x)
+        """
+
+        # Optimization 29: Switch to SwiGLU MLP
+        hidden_dim = int(8 * cfg.d_model / 3)
+        hidden_dim = 64 * ((hidden_dim + 63) // 64)
+        self.gate_proj = nn.Linear(cfg.d_model, hidden_dim, bias=False)
+        self.up_proj = nn.Linear(cfg.d_model, hidden_dim, bias=False)
+        self.down_proj = nn.Linear(hidden_dim, cfg.d_model, bias=False)
+        self.dropout = nn.Dropout(cfg.dropout)
+
+    def forward(self, x): # return self.net(x)
+        # Optimization 29: Switch to SwiGLU MLP
+        gate = F.silu(self.gate_proj(x))
+        value = self.up_proj(x)
+
+        x = gate * value
+        x = self.down_proj(x)
+
+        return self.dropout(x)
 
 class Block(nn.Module):
     def __init__(self, cfg: GPTConfig):
@@ -389,7 +408,8 @@ class GPT(nn.Module):
         # Optimization 27: Add residual initialization scaling
         residual_init_std = 0.02 / math.sqrt(2 * cfg.n_layer)
         for name, param in self.named_parameters():
-            if name.endswith("attn.proj.weight") or name.endswith("mlp.net.2.weight"):
+            # if name.endswith("attn.proj.weight") or name.endswith("mlp.net.2.weight"): -> For Opti 29
+            if name.endswith("attn.proj.weight") or name.endswith("mlp.down_proj.weight"):
                 nn.init.normal_(param, mean=0.0, std=residual_init_std)
 
         self.head.weight = self.token_emb.weight
