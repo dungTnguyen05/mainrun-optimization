@@ -244,6 +244,7 @@ class GPTConfig:
     dropout: float
 
 # Optimization 35: Replace LayerNorm with RMSNorm
+"""
 class RMSNorm(nn.Module):
     def __init__(self, dim: int, eps: float = 1e-5):
         super().__init__()
@@ -258,6 +259,7 @@ class RMSNorm(nn.Module):
         x_norm = x_float * torch.rsqrt(rms + self.eps)
 
         return (x_norm * self.weight.float()).to(input_dtype)
+"""
 
 # Optimization 28: Replace learned positional embeddings with RoPE
 def apply_rotary_embeddings(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
@@ -283,6 +285,8 @@ class CausalSelfAttention(nn.Module):
 
         self.head_dim = cfg.d_model // cfg.n_head
         self.n_head = cfg.n_head
+        
+        self.dropout_p = cfg.dropout # For Optimization 36
 
         assert self.head_dim % 2 == 0, (
             "RoPE requires an even attention head dimension"
@@ -297,9 +301,11 @@ class CausalSelfAttention(nn.Module):
             cfg.d_model,
         )
 
-        self.attn_drop = nn.Dropout(cfg.dropout)
+        # self.attn_drop = nn.Dropout(cfg.dropout) -> Remove for Optimization 36
         self.resid_drop = nn.Dropout(cfg.dropout)
-
+        
+        # Remove for Optimization 36
+        """
         self.register_buffer(
             "tril",
             torch.tril(
@@ -311,6 +317,7 @@ class CausalSelfAttention(nn.Module):
             ),
             persistent=False,
         )
+        """
 
         # Optimization 28: Replace learned positional embeddings with RoPE
         inv_freq = 1.0 / (
@@ -370,6 +377,17 @@ class CausalSelfAttention(nn.Module):
         q = apply_rotary_embeddings(q, cos, sin)
         k = apply_rotary_embeddings(k, cos, sin)
 
+        # Optimization 36: PyTorch SDPA
+        y = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=None,
+            dropout_p=self.dropout_p if self.training else 0.0,
+            is_causal=True,
+        )
+
+        """
         att = (
             q @ k.transpose(-2, -1)
         ) * (1.0 / math.sqrt(self.head_dim))
@@ -383,6 +401,7 @@ class CausalSelfAttention(nn.Module):
         att = self.attn_drop(att)
 
         y = att @ v
+        """
 
         y = (
             y.transpose(1, 2)
@@ -427,12 +446,12 @@ class MLP(nn.Module):
 class Block(nn.Module):
     def __init__(self, cfg: GPTConfig):
         super().__init__()
-        # self.ln1 = nn.LayerNorm(cfg.d_model)
-        # self.ln2 = nn.LayerNorm(cfg.d_model)
+        self.ln1 = nn.LayerNorm(cfg.d_model)
+        self.ln2 = nn.LayerNorm(cfg.d_model)
 
         # Optimization 35: Replace LayerNorm with RMSNorm
-        self.ln1 = RMSNorm(cfg.d_model)
-        self.ln2 = RMSNorm(cfg.d_model)
+        # self.ln1 = RMSNorm(cfg.d_model)
+        # self.ln2 = RMSNorm(cfg.d_model)
 
         self.attn = CausalSelfAttention(cfg)
         self.mlp  = MLP(cfg)
@@ -450,10 +469,10 @@ class GPT(nn.Module):
         self.drop      = nn.Dropout(cfg.dropout)
         self.blocks    = nn.ModuleList([Block(cfg) for _ in range(cfg.n_layer)])
 
-        # self.ln_f      = nn.LayerNorm(cfg.d_model)
+        self.ln_f      = nn.LayerNorm(cfg.d_model)
 
         # Optimization 35: Replace final LayerNorm with RMSNorm
-        self.ln_f = RMSNorm(cfg.d_model)
+        # self.ln_f = RMSNorm(cfg.d_model)
 
         self.head      = nn.Linear(cfg.d_model, cfg.vocab_size, bias=False)
 
