@@ -724,7 +724,7 @@ def main():
         opt,
         T_max=max_steps - warmup_steps,
         # Optimization 42: Add a cosine learning-rate floor
-        eta_min=0.05 * args.lr
+        # eta_min=0.05 * args.lr
     )
     scheduler = torch.optim.lr_scheduler.SequentialLR(
         opt,
